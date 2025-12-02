@@ -10,6 +10,7 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 from rdkit import Chem
+from rdkit.Chem import Descriptors, QED, AllChem, DataStructs
 
 # Set non-interactive backend for saving plots without a display
 plt.switch_backend('agg')
@@ -37,6 +38,40 @@ def download_data():
     else:
         print("gdb9.sdf already exists. Skipping download.")
 
+def grad_norm(params):
+    total = 0.0
+    for p in params:
+        if p.grad is not None:
+            total += p.grad.data.norm(2).item() ** 2
+    return float(np.sqrt(total)) if total > 0 else 0.0
+
+def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=5000):
+    print("Calculating Tanimoto/Fingerprint stats...")
+    
+    # Filter valid molecules
+    gen_mols = [Chem.MolFromSmiles(s) for s in gen_smiles]
+    gen_mols = [m for m in gen_mols if m is not None][:n_sample]
+    
+    if len(gen_mols) < 2:
+        return 0.0, 0.0
+
+    # Get Fingerprints
+    gen_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in gen_mols]
+    
+    # Internal Diversity
+    # Average Tanimoto distance (1 - similarity) between pairs
+    sims = []
+    for i in range(len(gen_fps)):
+        # Compare with a random subset to save time if n is large, or all pairs
+        for j in range(i+1, len(gen_fps)):
+            sims.append(DataStructs.TanimotoSimilarity(gen_fps[i], gen_fps[j]))
+            if len(sims) > 5000: break # cap for speed
+        if len(sims) > 5000: break
+            
+    avg_internal_sim = np.mean(sims) if sims else 0.0
+    internal_diversity = 1.0 - avg_internal_sim
+    
+    return internal_diversity
 
 class SMILESTokenizer:
     def __init__(self, smiles_list):
@@ -322,8 +357,12 @@ def main():
             rbm_cd = (model.rbm.free_energy(z_h.detach()) - model.rbm.free_energy(v)).mean().item()
             tl.append(vae_loss.item()); tr.append(recon.item()); tk.append(kld.item()); tb.append(rbm_cd)
 
+            # --- [Feature 1] Log Progress with Gradient Norms every 50 batches ---
             if (i + 1) % 50 == 0:
-                print(f"Batch {i+1}/{len(train_dl)} | Loss {vae_loss.item():.4f} | Recon {recon.item():.4f} | KLD {kld.item():.4f} | RBM {rbm_cd:.4f}")
+                gn_vae = grad_norm(vae_params)
+                gn_rbm = grad_norm(model.rbm.parameters())
+                print(f"Batch {i+1}/{len(train_dl)} | Loss {vae_loss.item():.4f} | Recon {recon.item():.4f} | "
+                      f"KLD {kld.item():.4f} | RBM {rbm_cd:.4f} | Grads: VAE {gn_vae:.3f} RBM {gn_rbm:.3f}")
 
         # Aggregates
         avg_loss, avg_recon, avg_kld, avg_rbm = map(np.mean, [tl, tr, tk, tb])
@@ -354,13 +393,21 @@ def main():
             best_val_loss = v_loss
             torch.save(model.state_dict(), f'best_model_seed_{args.seed}.pt')
             print(f"  [+] Saved Best Model (Val Loss: {v_loss:.4f})")
+            
+        # --- [Feature 2] Intermediate Generation every 2 epochs ---
+        if (ep + 1) % 2 == 0:
+            print(f"--- Epoch {ep+1} Sanity Check ---")
+            with torch.no_grad():
+                chk_smiles = generate_from_prior(model, tokenizer, device, num_samples=3, gibbs_steps=200, max_gen_len=max_len)
+            for j, s in enumerate(chk_smiles):
+                print(f"{j+1}. {s[:60]}")
+            print("-------------------------------")
 
     # --- 6. Post-Training Output ---
     
-    # Save Metrics
+    # Save Metrics & Plot
     torch.save(metrics, f'metrics_seed_{args.seed}.pt')
     
-    # Save Plot
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     ax1.plot(metrics['train_recon'], label='Train Recon')
     ax1.plot(metrics['val_recon'], '--', label='Val Recon')
@@ -378,19 +425,16 @@ def main():
     plt.savefig(f'training_plot_seed_{args.seed}.png')
     plt.close()
     
-    print("Generating SMILES from prior...")
+    # --- 7. Final Generation & Full Evaluation ---
+    print("\nGenerating final samples and calculating metrics...")
     
-    # Generate 1000 samples for better statistics
     with torch.no_grad():
-        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=5000, gibbs_steps=200, max_gen_len=max_len)
+        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=1000, gibbs_steps=200, max_gen_len=max_len)
     
-    # Save raw SMILES
     with open(f'generated_smiles_seed_{args.seed}.txt', 'w') as f:
         for s in gen_smiles:
             f.write(f"{s}\n")
 
-    # --- CALCULATE VUN, QED, LogP ---
-    print("Calculating metrics...")
     valid_mols = []
     valid_smiles = []
     for s in gen_smiles:
@@ -399,17 +443,15 @@ def main():
             valid_mols.append(m)
             valid_smiles.append(Chem.MolToSmiles(m))
 
-    # Metrics Calculation
+    # Basic Metrics
     n_gen = len(gen_smiles)
     n_valid = len(valid_smiles)
-    
     validity = n_valid / n_gen * 100 if n_gen > 0 else 0
     
     unique_set = set(valid_smiles)
     n_unique = len(unique_set)
     uniqueness = n_unique / n_valid * 100 if n_valid > 0 else 0
     
-    # Novelty (compare against training data loaded earlier)
     train_set = set(smiles)
     n_novel = sum(1 for s in unique_set if s not in train_set)
     novelty = n_novel / n_unique * 100 if n_unique > 0 else 0
@@ -417,26 +459,31 @@ def main():
     # Properties
     logp_vals = [Descriptors.MolLogP(m) for m in valid_mols]
     qed_vals = [QED.qed(m) for m in valid_mols]
-    
     avg_logp = np.mean(logp_vals) if logp_vals else 0
     avg_qed = np.mean(qed_vals) if qed_vals else 0
+    
+    # --- [Feature 3] Tanimoto Analysis ---
+    int_div = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000)
 
-    # --- PRINT RESULTS ---
+    # --- PRINT FINAL REPORT ---
     print(f"\n{'='*40}")
     print(f"FINAL RESULTS FOR SEED {args.seed}")
     print(f"{'='*40}")
     print(f"Validity:   {validity:.2f}%")
     print(f"Uniqueness: {uniqueness:.2f}%")
     print(f"Novelty:    {novelty:.2f}%")
+    print(f"Int Div:    {int_div:.4f}")
     print(f"Avg LogP:   {avg_logp:.4f}")
     print(f"Avg QED:    {avg_qed:.4f}")
     print(f"{'='*40}")
     
-    # Save results to a file
+    # Save results
     with open(f'final_stats_seed_{args.seed}.txt', 'w') as f:
         f.write(f"Validity: {validity}\nUniqueness: {uniqueness}\nNovelty: {novelty}\n")
+        f.write(f"Internal_Diversity: {int_div}\n")
         f.write(f"LogP: {avg_logp}\nQED: {avg_qed}\n")
 
-    print(f"Done. Saved stats to final_stats_seed_{args.seed}.txt")
+    print(f"Done. Files saved for Seed {args.seed}.")
+
 if __name__ == "__main__":
     main()
