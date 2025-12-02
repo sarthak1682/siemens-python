@@ -308,7 +308,7 @@ def main():
     # --- 4. PCD Hyperparams ---
     v_neg = torch.bernoulli(torch.full((BATCH_SIZE, model.latent_dim), 0.5)).to(device)
     CD_STEPS = 30
-    EPOCHS = 20
+    EPOCHS = 1
     KLD_MAX = 0.1
     KLD_ANNEAL_EPOCHS = 5
     GRAD_CLIP = 1.0
@@ -438,9 +438,13 @@ def main():
     ax1.legend(); ax1.grid(True)
     
     ax2_t = ax2.twinx()
-    ax2.plot(metrics['train_kld'], color='blue', label='KLD')
-    ax2_t.plot(metrics['train_rbm'], color='red', label='RBM CD')
-    ax2.set_title(f'Latent Losses (Seed {args.seed})')
+    #Add alpha to KLD (Blue)
+    ax2.plot(metrics['train_kld'], color='blue', alpha=0.6, label='KLD')
+    
+    #Make RBM dashed so blue can be seen behind it
+    ax2_t.plot(metrics['train_rbm'], color='red', linestyle='--', label='RBM CD')
+    
+    ax2.set(title=f'Latent Losses (Seed {args.seed})', xlabel='Epoch', ylabel='KLD', color='blue')
     ax2.set_xlabel('Epoch')
     ax2.set_ylabel('KLD', color='blue')
     ax2.tick_params(axis='y', labelcolor='blue')
