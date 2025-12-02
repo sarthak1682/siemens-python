@@ -322,6 +322,9 @@ def main():
             rbm_cd = (model.rbm.free_energy(z_h.detach()) - model.rbm.free_energy(v)).mean().item()
             tl.append(vae_loss.item()); tr.append(recon.item()); tk.append(kld.item()); tb.append(rbm_cd)
 
+            if (i + 1) % 50 == 0:
+                print(f"Batch {i+1}/{len(train_dl)} | Loss {vae_loss.item():.4f} | Recon {recon.item():.4f} | KLD {kld.item():.4f} | RBM {rbm_cd:.4f}")
+
         # Aggregates
         avg_loss, avg_recon, avg_kld, avg_rbm = map(np.mean, [tl, tr, tk, tb])
         metrics["train_loss"].append(avg_loss)
