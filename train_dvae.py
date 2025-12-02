@@ -308,7 +308,7 @@ def main():
     # --- 4. PCD Hyperparams ---
     v_neg = torch.bernoulli(torch.full((BATCH_SIZE, model.latent_dim), 0.5)).to(device)
     CD_STEPS = 30
-    EPOCHS = 20
+    EPOCHS = 2
     KLD_MAX = 0.1
     KLD_ANNEAL_EPOCHS = 5
     GRAD_CLIP = 1.0
