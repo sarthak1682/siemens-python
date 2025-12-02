@@ -45,33 +45,46 @@ def grad_norm(params):
             total += p.grad.data.norm(2).item() ** 2
     return float(np.sqrt(total)) if total > 0 else 0.0
 
-def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=5000):
+def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=1000):
     print("Calculating Tanimoto/Fingerprint stats...")
     
     # Filter valid molecules
-    gen_mols = [Chem.MolFromSmiles(s) for s in gen_smiles]
-    gen_mols = [m for m in gen_mols if m is not None][:n_sample]
+    gen_mols = [Chem.MolFromSmiles(s) for s in gen_smiles if Chem.MolFromSmiles(s)]
+    train_mols = [Chem.MolFromSmiles(s) for s in train_smiles if Chem.MolFromSmiles(s)]
+    
+    # Shuffle and slice to save time
+    random.shuffle(gen_mols)
+    random.shuffle(train_mols)
+    gen_mols = gen_mols[:n_sample]
+    train_mols = train_mols[:n_sample]
     
     if len(gen_mols) < 2:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
 
     # Get Fingerprints
     gen_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in gen_mols]
+    train_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in train_mols]
     
-    # Internal Diversity
-    # Average Tanimoto distance (1 - similarity) between pairs
+    # Internal Similarity (Mean Pairwise Tanimoto)
     sims = []
     for i in range(len(gen_fps)):
-        # Compare with a random subset to save time if n is large, or all pairs
         for j in range(i+1, len(gen_fps)):
             sims.append(DataStructs.TanimotoSimilarity(gen_fps[i], gen_fps[j]))
-            if len(sims) > 5000: break # cap for speed
+            if len(sims) > 5000: break
         if len(sims) > 5000: break
             
     avg_internal_sim = np.mean(sims) if sims else 0.0
-    internal_diversity = 1.0 - avg_internal_sim
     
-    return internal_diversity
+    # Novelty Score (Max Sim vs Train) & % Novel
+    max_sims = []
+    for gfp in gen_fps:
+        m_sim = max([DataStructs.TanimotoSimilarity(gfp, tfp) for tfp in train_fps])
+        max_sims.append(m_sim)
+    
+    avg_novelty_score = np.mean(max_sims) if max_sims else 0.0
+    percent_novel = sum(1 for s in max_sims if s < 0.4) / len(max_sims) * 100 if max_sims else 0.0
+    
+    return avg_internal_sim, avg_novelty_score, percent_novel
 
 class SMILESTokenizer:
     def __init__(self, smiles_list):
@@ -437,8 +450,8 @@ def main():
     plt.tight_layout()
     plt.savefig(f'training_plot_seed_{args.seed}.png')
     plt.close()
-    
-    # --- 7. Final Generation & Full Evaluation ---
+
+    # --- 7. Final Gen + Eval ---
     print("\nGenerating final samples and calculating metrics...")
     
     with torch.no_grad():
@@ -454,6 +467,7 @@ def main():
         m = Chem.MolFromSmiles(s)
         if m is not None:
             valid_mols.append(m)
+            # CHANGE: Canonicalize the Generated output to match Training format
             valid_smiles.append(Chem.MolToSmiles(m))
 
     # Basic Metrics
@@ -465,8 +479,15 @@ def main():
     n_unique = len(unique_set)
     uniqueness = n_unique / n_valid * 100 if n_valid > 0 else 0
     
-    train_set = set(smiles)
-    n_novel = sum(1 for s in unique_set if s not in train_set)
+    # Create a canonical training set for STRICT string matching
+    print("Canonicalizing training set for strict novelty check...")
+    train_set_canonical = set()
+    for s in smiles:
+        m = Chem.MolFromSmiles(s)
+        if m:
+            train_set_canonical.add(Chem.MolToSmiles(m))
+            
+    n_novel = sum(1 for s in unique_set if s not in train_set_canonical)
     novelty = n_novel / n_unique * 100 if n_unique > 0 else 0
     
     # Properties
@@ -475,28 +496,32 @@ def main():
     avg_logp = np.mean(logp_vals) if logp_vals else 0
     avg_qed = np.mean(qed_vals) if qed_vals else 0
     
-    # --- [Feature 3] Tanimoto Analysis ---
-    int_div = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000)
+    
+    avg_sim, nov_score, per_nov = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000)
 
     # --- PRINT FINAL REPORT ---
     print(f"\n{'='*40}")
     print(f"FINAL RESULTS FOR SEED {args.seed}")
     print(f"{'='*40}")
-    print(f"Validity:   {validity:.2f}%")
-    print(f"Uniqueness: {uniqueness:.2f}%")
-    print(f"Novelty:    {novelty:.2f}%")
-    print(f"Int Div:    {int_div:.4f}")
-    print(f"Avg LogP:   {avg_logp:.4f}")
-    print(f"Avg QED:    {avg_qed:.4f}")
+    print(f"Validity:          {validity:.2f}%")
+    print(f"Uniqueness:        {uniqueness:.2f}%")
+    print(f"Novelty (Strict):  {novelty:.2f}%")
+    print(f"Internal Sim:      {avg_sim:.4f}")
+    print(f"Novelty Score:     {nov_score:.4f}")
+    print(f"Novel (<0.4):      {per_nov:.1f}%")
+    print(f"Avg LogP:          {avg_logp:.4f}")
+    print(f"Avg QED:           {avg_qed:.4f}")
     print(f"{'='*40}")
     
     # Save results
     with open(f'final_stats_seed_{args.seed}.txt', 'w') as f:
         f.write(f"Validity: {validity}\nUniqueness: {uniqueness}\nNovelty: {novelty}\n")
-        f.write(f"Internal_Diversity: {int_div}\n")
+        f.write(f"Internal_Similarity: {avg_sim}\n")
+        f.write(f"Novelty_Score: {nov_score}\n")
         f.write(f"LogP: {avg_logp}\nQED: {avg_qed}\n")
 
     print(f"Done. Files saved for Seed {args.seed}.")
+    
 
 if __name__ == "__main__":
     main()
