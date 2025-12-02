@@ -375,17 +375,65 @@ def main():
     plt.savefig(f'training_plot_seed_{args.seed}.png')
     plt.close()
     
-    # Generate and Save SMILES
     print("Generating SMILES from prior...")
-    with torch.no_grad():
-        # Generate 500 samples
-        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=500, gibbs_steps=200, max_gen_len=max_len)
     
+    # Generate 1000 samples for better statistics
+    with torch.no_grad():
+        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=1000, gibbs_steps=200, max_gen_len=max_len)
+    
+    # Save raw SMILES
     with open(f'generated_smiles_seed_{args.seed}.txt', 'w') as f:
         for s in gen_smiles:
             f.write(f"{s}\n")
-    
-    print(f"Done. Saved: best_model_seed_{args.seed}.pt, metrics_seed_{args.seed}.pt, plot, generated_smiles.")
 
+    # --- CALCULATE VUN, QED, LogP ---
+    print("Calculating metrics...")
+    valid_mols = []
+    valid_smiles = []
+    for s in gen_smiles:
+        m = Chem.MolFromSmiles(s)
+        if m is not None:
+            valid_mols.append(m)
+            valid_smiles.append(Chem.MolToSmiles(m))
+
+    # Metrics Calculation
+    n_gen = len(gen_smiles)
+    n_valid = len(valid_smiles)
+    
+    validity = n_valid / n_gen * 100 if n_gen > 0 else 0
+    
+    unique_set = set(valid_smiles)
+    n_unique = len(unique_set)
+    uniqueness = n_unique / n_valid * 100 if n_valid > 0 else 0
+    
+    # Novelty (compare against training data loaded earlier)
+    train_set = set(smiles)
+    n_novel = sum(1 for s in unique_set if s not in train_set)
+    novelty = n_novel / n_unique * 100 if n_unique > 0 else 0
+    
+    # Properties
+    logp_vals = [Descriptors.MolLogP(m) for m in valid_mols]
+    qed_vals = [QED.qed(m) for m in valid_mols]
+    
+    avg_logp = np.mean(logp_vals) if logp_vals else 0
+    avg_qed = np.mean(qed_vals) if qed_vals else 0
+
+    # --- PRINT RESULTS ---
+    print(f"\n{'='*40}")
+    print(f"FINAL RESULTS FOR SEED {args.seed}")
+    print(f"{'='*40}")
+    print(f"Validity:   {validity:.2f}%")
+    print(f"Uniqueness: {uniqueness:.2f}%")
+    print(f"Novelty:    {novelty:.2f}%")
+    print(f"Avg LogP:   {avg_logp:.4f}")
+    print(f"Avg QED:    {avg_qed:.4f}")
+    print(f"{'='*40}")
+    
+    # Save results to a file
+    with open(f'final_stats_seed_{args.seed}.txt', 'w') as f:
+        f.write(f"Validity: {validity}\nUniqueness: {uniqueness}\nNovelty: {novelty}\n")
+        f.write(f"LogP: {avg_logp}\nQED: {avg_qed}\n")
+
+    print(f"Done. Saved stats to final_stats_seed_{args.seed}.txt")
 if __name__ == "__main__":
     main()
