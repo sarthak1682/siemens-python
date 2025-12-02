@@ -398,7 +398,7 @@ def main():
         if (ep + 1) % 2 == 0:
             print(f"--- Epoch {ep+1} Sanity Check ---")
             with torch.no_grad():
-                chk_smiles = generate_from_prior(model, tokenizer, device, num_samples=3, gibbs_steps=200, max_gen_len=max_len)
+                chk_smiles = generate_from_prior(model, tokenizer, device, num_samples=5, gibbs_steps=200, max_gen_len=max_len)
             
             valid_count = 0
             for j, s in enumerate(chk_smiles):
@@ -439,7 +439,7 @@ def main():
     print("\nGenerating final samples and calculating metrics...")
     
     with torch.no_grad():
-        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=1000, gibbs_steps=200, max_gen_len=max_len)
+        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=5000, gibbs_steps=200, max_gen_len=max_len)
     
     with open(f'generated_smiles_seed_{args.seed}.txt', 'w') as f:
         for s in gen_smiles:
