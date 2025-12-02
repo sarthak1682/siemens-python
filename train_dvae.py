@@ -45,14 +45,14 @@ def grad_norm(params):
             total += p.grad.data.norm(2).item() ** 2
     return float(np.sqrt(total)) if total > 0 else 0.0
 
-def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=1000):
-    print("Calculating Tanimoto/Fingerprint stats...")
+def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=1000, seed=0):
+    print(f"Calculating Tanimoto/Fingerprint stats (Sample size: {n_sample})...")
     
-    # Filter valid molecules
+    # 1. Filter valid molecules
     gen_mols = [Chem.MolFromSmiles(s) for s in gen_smiles if Chem.MolFromSmiles(s)]
     train_mols = [Chem.MolFromSmiles(s) for s in train_smiles if Chem.MolFromSmiles(s)]
     
-    # Shuffle and slice to save time
+    # 2. Shuffle and slice to save time (same as notebook)
     random.shuffle(gen_mols)
     random.shuffle(train_mols)
     gen_mols = gen_mols[:n_sample]
@@ -61,21 +61,20 @@ def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=1000):
     if len(gen_mols) < 2:
         return 0.0, 0.0, 0.0
 
-    # Get Fingerprints
+    # 3. Get Fingerprints
     gen_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in gen_mols]
     train_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in train_mols]
     
-    # Internal Similarity (Mean Pairwise Tanimoto)
+    # 4. Internal Similarity (Mean Pairwise Tanimoto)
+    # --- FIX: Removed the 5000 count break. Calculating full pairwise matrix. ---
     sims = []
     for i in range(len(gen_fps)):
         for j in range(i+1, len(gen_fps)):
             sims.append(DataStructs.TanimotoSimilarity(gen_fps[i], gen_fps[j]))
-            if len(sims) > 5000: break
-        if len(sims) > 5000: break
             
     avg_internal_sim = np.mean(sims) if sims else 0.0
     
-    # Novelty Score (Max Sim vs Train) & % Novel
+    # 5. Novelty Score (Max Sim vs Train) & % Novel
     max_sims = []
     for gfp in gen_fps:
         m_sim = max([DataStructs.TanimotoSimilarity(gfp, tfp) for tfp in train_fps])
@@ -84,8 +83,33 @@ def calculate_tanimoto_stats(gen_smiles, train_smiles, n_sample=1000):
     avg_novelty_score = np.mean(max_sims) if max_sims else 0.0
     percent_novel = sum(1 for s in max_sims if s < 0.4) / len(max_sims) * 100 if max_sims else 0.0
     
+    # 6. --- NEW: Generate and Save Plots (Restoring Notebook functionality) ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot 1: Internal Diversity
+    ax1.hist(sims, bins=50, edgecolor='black', alpha=0.7)
+    ax1.axvline(avg_internal_sim, color='r', linestyle='--', label=f'Mean: {avg_internal_sim:.3f}')
+    ax1.set_title('Internal Diversity')
+    ax1.set_xlabel('Tanimoto Similarity')
+    ax1.set_ylabel('Count')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Novelty
+    ax2.hist(max_sims, bins=50, edgecolor='black', color='coral', alpha=0.7)
+    ax2.axvline(avg_novelty_score, color='r', linestyle='--', label=f'Mean: {avg_novelty_score:.3f}')
+    ax2.axvline(0.4, color='g', linestyle=':', label='Novel (<0.4)')
+    ax2.set_title('Novelty vs Training')
+    ax2.set_xlabel('Max Tanimoto')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(f'tanimoto_dist_seed_{seed}.png')
+    plt.close()
+    
     return avg_internal_sim, avg_novelty_score, percent_novel
-
+    
 class SMILESTokenizer:
     def __init__(self, smiles_list):
         chars = set()
@@ -517,7 +541,7 @@ def main():
     avg_qed = np.mean(qed_vals) if qed_vals else 0
     
     
-    avg_sim, nov_score, per_nov = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000)
+    avg_sim, nov_score, per_nov = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000, seed = args.seed)
 
     # --- PRINT FINAL REPORT ---
     print(f"\n{'='*40}")
