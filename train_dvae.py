@@ -399,8 +399,18 @@ def main():
             print(f"--- Epoch {ep+1} Sanity Check ---")
             with torch.no_grad():
                 chk_smiles = generate_from_prior(model, tokenizer, device, num_samples=3, gibbs_steps=200, max_gen_len=max_len)
+            
+            valid_count = 0
             for j, s in enumerate(chk_smiles):
-                print(f"{j+1}. {s[:60]}")
+                mol = Chem.MolFromSmiles(s)
+                is_valid = mol is not None
+                if is_valid: valid_count += 1
+                
+                # Print string with Checkmark or Cross
+                status = "✓" if is_valid else "✗"
+                print(f"{j+1}. {s[:60]:<60} {status}")
+            
+            print(f"Valid: {valid_count}/3")
             print("-------------------------------")
 
     # --- 6. Post-Training Output ---
