@@ -438,18 +438,28 @@ def main():
     ax1.legend(); ax1.grid(True)
     
     ax2_t = ax2.twinx()
-    #Add alpha to KLD (Blue)
+    
+    # Plot KLD (Blue) with transparency
     ax2.plot(metrics['train_kld'], color='blue', alpha=0.6, label='KLD')
     
-    #Make RBM dashed so blue can be seen behind it
+    # Plot RBM (Red) dashed
     ax2_t.plot(metrics['train_rbm'], color='red', linestyle='--', label='RBM CD')
     
-    ax2.set(title=f'Latent Losses (Seed {args.seed})', xlabel='Epoch', ylabel='KLD', color='blue')
-    ax2.set_xlabel('Epoch')
+    # Fix: Set title and labels safely (removing invalid 'color' arg from set())
+    ax2.set(title=f'Latent Losses (Seed {args.seed})', xlabel='Epoch')
+    
+    # Color the left y-axis (KLD) blue
     ax2.set_ylabel('KLD', color='blue')
     ax2.tick_params(axis='y', labelcolor='blue')
+    
+    # Color the right y-axis (RBM) red
     ax2_t.set_ylabel('RBM CD', color='red')
-    ax2.legend(loc='upper left'); ax2_t.legend(loc='upper right'); ax2.grid(True)
+    ax2_t.tick_params(axis='y', labelcolor='red')
+    
+    ax2.legend(loc='upper left')
+    ax2_t.legend(loc='upper right')
+    ax2.grid(True)
+
     
     plt.tight_layout()
     plt.savefig(f'training_plot_seed_{args.seed}.png')
