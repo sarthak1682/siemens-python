@@ -467,7 +467,7 @@ def main():
         m = Chem.MolFromSmiles(s)
         if m is not None:
             valid_mols.append(m)
-            # CHANGE: Canonicalize the Generated output to match Training format
+            # Canonicalize the Generated output to match Training format
             valid_smiles.append(Chem.MolToSmiles(m))
 
     # Basic Metrics
