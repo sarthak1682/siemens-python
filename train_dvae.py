@@ -534,11 +534,17 @@ def main():
     n_novel = sum(1 for s in unique_set if s not in train_set_canonical)
     novelty = n_novel / n_unique * 100 if n_unique > 0 else 0
     
-    # Properties
+    ## Properties
     logp_vals = [Descriptors.MolLogP(m) for m in valid_mols]
     qed_vals = [QED.qed(m) for m in valid_mols]
+    
+    # Calculate Mean
     avg_logp = np.mean(logp_vals) if logp_vals else 0
     avg_qed = np.mean(qed_vals) if qed_vals else 0
+    
+    # Calculate Standard Deviation (The missing part)
+    std_logp = np.std(logp_vals) if logp_vals else 0
+    std_qed = np.std(qed_vals) if qed_vals else 0
     
     
     avg_sim, nov_score, per_nov = calculate_tanimoto_stats(valid_smiles, smiles, n_sample=1000, seed = args.seed)
@@ -553,8 +559,8 @@ def main():
     print(f"Internal Sim:      {avg_sim:.4f}")
     print(f"Novelty Score:     {nov_score:.4f}")
     print(f"Novel (<0.4):      {per_nov:.1f}%")
-    print(f"Avg LogP:          {avg_logp:.4f}")
-    print(f"Avg QED:           {avg_qed:.4f}")
+    print(f"LogP:              {avg_logp:.4f} ± {std_logp:.4f}")
+    print(f"QED:               {avg_qed:.4f} ± {std_qed:.4f}")
     print(f"{'='*40}")
     
     # Save results
@@ -562,7 +568,8 @@ def main():
         f.write(f"Validity: {validity}\nUniqueness: {uniqueness}\nNovelty: {novelty}\n")
         f.write(f"Internal_Similarity: {avg_sim}\n")
         f.write(f"Novelty_Score: {nov_score}\n")
-        f.write(f"LogP: {avg_logp}\nQED: {avg_qed}\n")
+        f.write(f"LogP: {avg_logp} +/- {std_logp}\n")
+        f.write(f"QED: {avg_qed} +/- {std_qed}\n")
 
     print(f"Done. Files saved for Seed {args.seed}.")
     
