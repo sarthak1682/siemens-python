@@ -379,7 +379,7 @@ def main():
     
     # Generate 1000 samples for better statistics
     with torch.no_grad():
-        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=1000, gibbs_steps=200, max_gen_len=max_len)
+        gen_smiles = generate_from_prior(model, tokenizer, device, num_samples=5000, gibbs_steps=200, max_gen_len=max_len)
     
     # Save raw SMILES
     with open(f'generated_smiles_seed_{args.seed}.txt', 'w') as f:
