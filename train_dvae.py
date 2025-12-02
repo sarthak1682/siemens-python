@@ -427,7 +427,10 @@ def main():
     ax2_t = ax2.twinx()
     ax2.plot(metrics['train_kld'], color='blue', label='KLD')
     ax2_t.plot(metrics['train_rbm'], color='red', label='RBM CD')
-    ax2.set(title=f'Latent Losses (Seed {args.seed})', xlabel='Epoch', ylabel='KLD', color='blue')
+    ax2.set_title(f'Latent Losses (Seed {args.seed})')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('KLD', color='blue')
+    ax2.tick_params(axis='y', labelcolor='blue')
     ax2_t.set_ylabel('RBM CD', color='red')
     ax2.legend(loc='upper left'); ax2_t.legend(loc='upper right'); ax2.grid(True)
     
