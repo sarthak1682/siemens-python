@@ -310,7 +310,7 @@ def main():
     max_len = max(len(s) for s in smiles) + 2
     
     train_size = int(0.9 * len(smiles))
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 256
     
     train_ds = SMILESDataset(smiles[:train_size], tokenizer, max_len)
     val_ds = SMILESDataset(smiles[train_size:], tokenizer, max_len)
