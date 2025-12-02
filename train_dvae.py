@@ -410,7 +410,7 @@ def main():
                 status = "✓" if is_valid else "✗"
                 print(f"{j+1}. {s[:60]:<60} {status}")
             
-            print(f"Valid: {valid_count}/3")
+            print(f"Valid: {valid_count}/5")
             print("-------------------------------")
 
     # --- 6. Post-Training Output ---
