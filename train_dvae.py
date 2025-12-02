@@ -308,7 +308,7 @@ def main():
     # --- 4. PCD Hyperparams ---
     v_neg = torch.bernoulli(torch.full((BATCH_SIZE, model.latent_dim), 0.5)).to(device)
     CD_STEPS = 30
-    EPOCHS = 1
+    EPOCHS = 2
     KLD_MAX = 0.1
     KLD_ANNEAL_EPOCHS = 5
     GRAD_CLIP = 1.0
@@ -428,38 +428,44 @@ def main():
 
     # --- 6. Post-Training Output ---
     
-    # Save Metrics & Plot
+    # Save Metrics
     torch.save(metrics, f'metrics_seed_{args.seed}.pt')
     
+    # Plotting
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # 1. Reconstruction Plot
     ax1.plot(metrics['train_recon'], label='Train Recon')
     ax1.plot(metrics['val_recon'], '--', label='Val Recon')
-    ax1.set(title=f'Reconstruction (Seed {args.seed})', xlabel='Epoch', ylabel='Loss')
-    ax1.legend(); ax1.grid(True)
+    ax1.set_title(f'Reconstruction (Seed {args.seed})')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True)
     
+    # 2. Latent Losses Plot (Dual Axis)
     ax2_t = ax2.twinx()
     
-    # Plot KLD (Blue) with transparency
+    # KLD (Blue, semi-transparent)
     ax2.plot(metrics['train_kld'], color='blue', alpha=0.6, label='KLD')
     
-    # Plot RBM (Red) dashed
+    # RBM (Red, Dashed - distinct from KLD)
     ax2_t.plot(metrics['train_rbm'], color='red', linestyle='--', label='RBM CD')
     
-    # Fix: Set title and labels safely (removing invalid 'color' arg from set())
-    ax2.set(title=f'Latent Losses (Seed {args.seed})', xlabel='Epoch')
+    # Configure Left Axis (Blue)
+    ax2.set_title(f'Latent Losses (Seed {args.seed})')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('KLD', color='blue')       # Correct way to set label color
+    ax2.tick_params(axis='y', labelcolor='blue') # Correct way to set tick color
     
-    # Color the left y-axis (KLD) blue
-    ax2.set_ylabel('KLD', color='blue')
-    ax2.tick_params(axis='y', labelcolor='blue')
-    
-    # Color the right y-axis (RBM) red
+    # Configure Right Axis (Red)
     ax2_t.set_ylabel('RBM CD', color='red')
     ax2_t.tick_params(axis='y', labelcolor='red')
     
+    # Legends & Grid
     ax2.legend(loc='upper left')
     ax2_t.legend(loc='upper right')
     ax2.grid(True)
-
     
     plt.tight_layout()
     plt.savefig(f'training_plot_seed_{args.seed}.png')
